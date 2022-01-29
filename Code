@@ -1,0 +1,147 @@
+import easyocr
+import torch
+import cv2
+import matplotlib.pyplot as plt
+import numpy as np
+import math
+
+
+class Detection:
+  def __init__(self, label, top_left, bottom_right):
+    self.label = label
+    self.top_left = top_left
+    self.bottom_right = bottom_right
+
+def cleanAndFind(validDetections, containsLabel):
+
+  largestDetection = []
+  maxFound = 0
+  for det in validDetections:
+    # If string contains a label such as 'mi' or 'km'
+    if (containsLabel):
+      # find the index of 'mi' in the string
+      max_index = det.label.find('mi')  
+      # if 'mi' was not found in the string, look for 'km' instead
+      if (max_index == -1):
+        max_index = det.label.find('km')
+      # trimming the label from the number ('km...' or 'mi...')
+      mileage = det.label[0:max_index]
+    
+    # text does not contain a label
+    else:
+      mileage = det.label
+
+    # removing spaces in string
+    mileage = mileage.replace(" ", "")
+
+    nonDigit_index = 0
+    for i, c in enumerate(mileage):
+      if not c.isdigit():
+          nonDigit_index = i
+          break
+    
+    if (nonDigit_index != 0):
+      mileage = mileage[0:nonDigit_index]
+
+    if (mileage.isdecimal()):
+      if (int(mileage) > maxFound):
+        maxFound = int(mileage)
+        largestDetection = [det,int(mileage)]
+
+  return largestDetection
+
+
+def displayImages(outputImages):
+  plt.figure(figsize=(20,20)) # specifying the overall grid size
+
+  for i in range(len(outputImages)):
+    plt.subplot(1,2,i+1)    # the number of expected images in the grid is (1 row, 2 columns = 2)
+    plt.imshow(outputImages[i])
+
+  plt.show()
+
+def drawBox(IMAGE_PATH, detection, mileage, outputImages):
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    img = cv2.imread(IMAGE_PATH)
+    img = cv2.rectangle(img,detection.top_left,detection.bottom_right,(0,255,0),3)
+    img = cv2.putText(img,mileage,detection.top_left, font, 3,(255,255,255),7,cv2.LINE_AA)
+    outputImages.append(img)
+
+def find(image_path):
+
+  outputImages = []
+  IMAGE_PATH = image_path
+
+  reader = easyocr.Reader(['en'])
+  result = reader.readtext(IMAGE_PATH)
+  img = cv2.imread(IMAGE_PATH)
+  font = cv2.FONT_HERSHEY_SIMPLEX
+
+
+  # Array to hold Detection objects, which have (Label, Top_Left, and Bottom_Right)
+  detections = []
+
+  for i in range (len(result)):
+    # Fetching the data we care about from the result
+    top_left = (int(result[i][0][0][0]),int(result[i][0][0][1]))
+    bottom_right = (int(result[i][0][2][0]),int(result[i][0][2][1]))
+    text = str(result[i][1])
+
+    # creating an object for the label and information and adding them to array, i == ID
+    det = Detection(text, top_left, bottom_right)
+    detections.append(det)
+
+    # Drawing the boxes and lables on the image
+    img = cv2.rectangle(img,top_left,bottom_right,(0,255,0),3)
+    img = cv2.putText(img,text,top_left, font, 2,(255,255,255),7,cv2.LINE_AA)
+
+  
+  outputImages.append(img)
+
+
+  possibleDetections = []
+  for det in detections:
+    label = det.label
+    # changed mi to m
+    if ('mi' in label.lower() or 'km' in label.lower()):
+      if (not ('km/' in label.lower() or 'mi/' in label.lower())):
+        possibleDetections.append(det)
+
+  # did we detect any 'mi' or 'km' ???
+  if (len(possibleDetections)) > 0:
+
+    # find the highest number WITH a label
+    validDetection = cleanAndFind(possibleDetections, True)
+    if (len(validDetection)) > 0:
+      mileage = str(validDetection[1])
+      drawBox(IMAGE_PATH, validDetection[0], mileage, outputImages)
+      displayImages(outputImages)
+      print("mileage detected:", mileage); return mileage
+    
+    # Cleaned array returned no mileage, but a label 'mi' or 'km' was actually found. return maximum number detected 
+    else:
+      #print("---- STEP 2 ACTIVATED ----")
+      # using False for boolean since we don't care about slicing 'mi' or 'km' from strings
+      validDetection = cleanAndFind(detections, False)
+      if (len(validDetection)) > 0:
+        mileage = str(validDetection[1])
+        drawBox(IMAGE_PATH, validDetection[0], mileage, outputImages)
+        displayImages(outputImages)
+        print("mileage detected:", mileage); return mileage
+      else:
+        displayImages(outputImages)
+        print("Mileage could not be detected "); return "NotFound"
+
+
+  # no label was found in the image, return maximum number detected  
+  else:
+      # using False for boolean since we don't care about slicing 'mi' or 'km' from strings
+      validDetection = cleanAndFind(detections, False)
+      if (len(validDetection)) > 0:
+        mileage = str(validDetection[1])
+        drawBox(IMAGE_PATH, validDetection[0], mileage, outputImages)
+        displayImages(outputImages)
+        print("mileage detected:", mileage); return mileage
+      else:
+        displayImages(outputImages)
+        print("Mileage could not be detected "); return "NotFound"
